@@ -62,6 +62,7 @@
 - 分辨真实内存 dump 与**抽取壳骨架**，并知道哪条恢复路线适用——包括当 `frida` 本身被拒绝时走 root 侧 dump。这次测量能看见什么、看不见什么，写在 `skills/apk-reverse/references/advanced-unpacking.md`。
 - 当逆向的成本高于调用时，**调用例程而不是逆向它**：在宿主上做模拟执行，或把一个活函数通过 Frida RPC 服务化。
 - 当一个 native 函数被 OLLVM 碾平成状态机时，去读**指令级执行证据**——包括在真实设备上实测到的 Stalker 反咬的两种方式。
+- 当每一个软件级 tracer 都在修改它所观察的东西时，转向**硬件层**：arm64 硬件观察点（零代码改动，但带诚实的 `TracerPid` 账本）、带五道闸门的 ETE/TRBE 差分追踪，以及在拥有匹配闸门的设备把它们打响之前始终标注为未核实的内核注入模板。
 - 认出**用户态 hooking 根本够不到那个检查**的情况（裸 `svc` 系统调用、`init_array` 早期检测）、上下相邻层实际能做什么，以及什么时候继续升级是错误答案。
 - 处理**非 REST 的协议**——无 schema 的 protobuf、gRPC、QUIC/HTTP3——以及无视系统信任库的 native 侧证书固定（pinning）。
 - **直接在手机上工作**：MT Manager 的编辑/重打包/签名流程及其 APK MCP 接口、LSPosed Manager、设备上的数据检查，与 PC 工具链并用，而不是用它来替代 PC 工具链。
@@ -200,6 +201,24 @@ references/               按需加载，每个文件一个主题
                               用户态 hooking 可证明够不到检查：裸 `svc`、init_array 早期
                               检测、每种 root 方案隐藏了什么、带版本闸门的
                               内核路线图，以及什么时候停止升级
+  hardware-watchpoints.md     arm64 上的隐形内存观察点：硬件调试槽位、带着诚实
+                              `TracerPid` 账本的 ptrace 交付路线、8 字节窗口对齐
+                              规则、各个陷阱（槽位按线程生效、信号转发、断点的
+                              步越舞步），以及每次命中前都欠着的那次对照运行
+  ete-diff-tracing.md         硬件执行流追踪（CoreSight ETE/TRBE）加差分法：五道
+                              闸门与它们各自如何静默失败、按线程的 `cs_etm` 采集，
+                              以及把两次只差一个输入位的运行还原成依赖输入的块集合
+                              ——另附从源码读出的两个开源平坦化家族的状态机差异，
+                              以及 xvmp IR 虚拟机的结构
+  hardware-sampling-and-crash.md
+                              无需预知地址的数据流（SPE：每采样带 PC + 数据地址）、
+                              栈不可信时的崩溃取证（BRBE 分支记录 / ETE 尾部），
+                              以及把运行时地址变成符号与静态偏移
+                              （`trace_addr2sym.py`，PIE vaddr/文件偏移规则）
+  kernel-event-injection.md   把驱动当伸进目标里的手：从内核布置、无 tracer 关系的
+                              观察点、陷阱处的寄存器改写、按路线（KPM/LKM/eBPF/
+                              Zygisk）的能力对照表，以及把这一层与另外两层叠加的
+                              组合配方
   on-device-tooling.md        直接在手机上工作：MT Manager 的编辑/重打包/签名及其 APK MCP、
                               LSPosed Manager、Termux+frida、设备上数据检查
   java2c-and-jni-sinking.md   Java2C 与 JNI sinking，最容易与抽取壳混淆的两种加固
@@ -322,6 +341,28 @@ scripts/                  参数化、与路径无关
   kernelsu_syscall_mask.py    生成 KernelSU/APatch 系统调用遮蔽脚手架：一个可安装的
                               用户态模块骨架加上 KPM/LKM/eBPF 内核侧模板，每个
                               都带自己的版本闸门和明确的未核实标注
+  hw_watch.py                 arm64 上的隐形内存观察点/执行断点：plan（带 8 字节窗口
+                              规则的 WCR/BCR 编码器）、emit（自包含的设备端 C 助手 ——
+                              可干净编译为静态 aarch64 ELF）、gates、run（构建+推送+
+                              流式采集命中）与 decode（每条命中的模块+偏移）
+  trace_diff.py               差分轨迹归约：把一条轨迹归约为 游程+直方图，或把两条
+                              轨迹对齐出 首次分歧 / 分歧区段 / 各自独有块 —— 与生产者
+                              无关（Stalker 日志或任何每行一个地址的流，含解码后的 cs_etm）
+  ete_capture.py              先过闸门的 CoreSight ETE 采集：五道闸门（内核年代、
+                              coresight sysfs、cs_etm PMU、带 CORESIGHT 的 perf、权限），
+                              perf/OpenCSD 构建配方，以及 `--control` 验证运行必须先
+                              通过的按线程记录封装
+  kernel_instrument_scaffold.py
+                              生成内核侧插桩脚手架：KPM/LKM 观察点+寄存器改写模板与一个
+                              诚实的用户态载体，各带自己的闸门和由 `verify` 强制执行的
+                              `NOT COMPILED AND NOT LOADED` 横幅
+  trace_addr2sym.py           运行时地址 → 符号 + 静态偏移，零依赖 ELF64
+                              （PT_LOAD vaddr/文件偏移换算、.dynsym/.symtab、
+                              strip 后降级）：接受 hw_watch 命中、trace 的 mod+off 键
+                              或裸地址列表；用真实交叉编译的 aarch64 .so 验证过
+  vm_handler_slice.py         把解释器轨迹去虚拟化：dispatcher 识别、按分发入口切成
+                              handler 段、签名聚类，以及通过可选 handler→opcode 映射
+                              得到的 guest opcode 轨迹 —— 按开源 xvmp IR 虚拟机校准
   rasc_build.py               构建并验证 rasc，即 ASC 索引器的 Rust 重实现：
                               --check 检查已有什么、--build 克隆并 cargo、--verify 用
                               droidasc 校验一个 APK，并在任何类集合差异上失败
@@ -375,6 +416,7 @@ export APKREV_TOOLS=<dir>:<dir>                  # POSIX
 | Python 3.9+ | 所有脚本 |
 | **`droidasc`**（ASC）（**可选，但强烈建议——先装这个**） | 整 APK 交叉引用索引：`findrefs` / `listclass` / `getclass` / `getmanifest`。一句 `pip install droidasc`，无 JVM、无 SDK、无需建索引。把「这几千个类里哪一个提到过这个字符串」变成亚秒级查询，也是找到名字被 R8 混淆过的类的唯一路线。**这是 agent 在做任何完整反编译之前应当伸手去拿的工具** —— 见 `skills/apk-reverse/references/toolchain.md` §droidasc (ASC) —— 一次查询就能问一个 APK「谁引用了这个？」 |
 | `ddc`（可选，但强烈建议） | 单文件 dex→Java 反编译器，带查询子命令（`info`、`findrefs`、`strings --with-locations`、按类反编译）。无 JVM。**读** ASC 所**定位**的东西；也能可靠地报告包身份 —— 见 `skills/apk-reverse/references/toolchain.md` §ddc —— 带查询子命令的 dex 转 Java（值得采用） |
+| **`dexsql`**（可选，但强烈建议） | 单文件，**用 SQL 查询整个 dex**，外加 APK manifest 与 `resources.arsc`，并内置 MCP server。它的类定义集合在四个归档上与 `rasc`/`droidasc`/`ddc` 完全一致，而且能回答另两个表达不了的问题：某被调方法的调用者、字段访问、数值常量、调试行表、注解、hiddenapi 标志。当问题是**连接或聚合**时用它 —— 见 `skills/apk-reverse/references/dexsql-sql-query-layer.md` |
 | `baksmali` / `smali` + `dexlib2` jars | 反汇编、汇编、外科式打补丁 |
 | JDK（`javac`、`java`） | 构建/运行 dexlib2 补丁器；同时提供 `keytool`/`jarsigner` |
 | Android SDK build-tools（`aapt`、`zipalign`、`apksigner`） | manifest 信息、对齐、签名。**`apksigner` 才是该用的签名器** —— `jarsigner` 会重写归档并破坏 Android R+ 所要求的对齐 |
@@ -402,7 +444,7 @@ export APKREV_TOOLS=<dir>:<dir>                  # POSIX
 
 为处理你自己的应用、你被授权分析的样本，以及 CTF/竞赛沙箱而构建。它不含任何内置的第三方二进制，也不含任何目标特定数据。
 
-它覆盖什么、刻意不覆盖什么，写在 `SKILL.md` 顶部 **Coverage** 一节。简版：仅 Android（不含 iOS），并且在经过真实打磨的层上深入 —— dex 补丁、重打包、壳与自定义加载器、native 篡改响应，以及 Flutter/Dart AOT。一次扩展迭代加入了第二梯队的已记录路线：重打包受阻时的**模块侧交付**、**抽取壳恢复**及其 VMP 边界、用于「调用而不是阅读」的**模拟执行与实时 RPC**、针对 OLLVM 的**指令级追踪**、REST 之外的**协议逆向**、当用户态 hooking 可证明够不到时用的**内核路线**图，以及**设备上工具**。随后一次**基准迭代**把公开目标放到这些路线之下（`tests/benchmark.md`）：它加入了 **Java2C 判别**（那种会让 agent 去追一个从不存在的解密 DEX 的误诊）、**split APK / App Bundle 处理**、**无 schema 的 protobuf 解码**、一个 **Dex-VMP 差分**测试台，以及**带版本闸门的内核模块模板** —— 并纠正了先前两条与自身测量结果不一致的说法。Unity/IL2CPP 逻辑恢复、React Native/Hermes 字节码内部，以及击败服务端权威**不**在覆盖范围内，skill 的写法就是明说这一点并停下，而不是把最近的一条已记录流程套用到一个它并非为之编写的目标上。
+它覆盖什么、刻意不覆盖什么，写在 `SKILL.md` 顶部 **Coverage** 一节。简版：仅 Android（不含 iOS），并且在经过真实打磨的层上深入 —— dex 补丁、重打包、壳与自定义加载器、native 篡改响应，以及 Flutter/Dart AOT。一次扩展迭代加入了第二梯队的已记录路线：重打包受阻时的**模块侧交付**、**抽取壳恢复**及其 VMP 边界、用于「调用而不是阅读」的**模拟执行与实时 RPC**、针对 OLLVM 的**指令级追踪**、REST 之外的**协议逆向**、当用户态 hooking 可证明够不到时用的**内核路线**图，以及**设备上工具**。随后一次**基准迭代**把公开目标放到这些路线之下（`tests/benchmark.md`）：它加入了 **Java2C 判别**（那种会让 agent 去追一个从不存在的解密 DEX 的误诊）、**split APK / App Bundle 处理**、**无 schema 的 protobuf 解码**、一个 **Dex-VMP 差分**测试台，以及**带版本闸门的内核模块模板** —— 并纠正了先前两条与自身测量结果不一致的说法。随后一次**硬件迭代**加入了软件工具之下的那一层：带诚实 `TracerPid` 账本的**硬件观察点**、带五道闸门的 **ETE/TRBE 差分追踪**，以及**内核侧注入模板** —— 凡是宿主可验证的部分都实测过，凡是设备绑定的部分在闸门打开前一律标注 `unverified`。Unity/IL2CPP 逻辑恢复、React Native/Hermes 字节码内部，以及击败服务端权威**不**在覆盖范围内，skill 的写法就是明说这一点并停下，而不是把最近的一条已记录流程套用到一个它并非为之编写的目标上。
 
 Coverage 一节完整陈述、同时也应当放在这里的四条限定：
 

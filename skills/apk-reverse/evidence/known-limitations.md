@@ -36,6 +36,13 @@ mechanism's truth. It means nobody has yet put a command and its output behind i
 - **The runtime routes need a real device.** Hooking, dumping, install-then-launch verification and
   the module route all require a rooted device; several of them additionally require a framework the
   device must have active.
+- **The hardware layer is a host-verified toolkit, not a device-verified one.** The watchpoint
+  encoders and the emitted helper's build (static aarch64, cross gcc) are measured, the differential
+  reducer is fixture-tested, the ELF symbolizer is verified against a real cross-compiled `.so`, and
+  the kernel templates generate and verify — but **no watchpoint was armed, no ETE/SPE trace
+  captured, no BRBE record read, and no kernel file compiled or loaded on any device by this
+  repository**. Every device-side step carries its control procedure in the reference file, and a
+  control that has not run means the result is `unverified`, not working-as-intended.
 - **The evidence record and the benchmark matrix do not ship.** Their paths appear in older
   documents as if they were openable files. They resolve only in the repository they were written in.
 

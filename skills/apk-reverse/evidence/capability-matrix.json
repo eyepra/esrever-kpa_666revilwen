@@ -415,6 +415,100 @@
       "evidence": ["references/server-api.md", "references/handoff-boundaries.md"],
       "evidence_not_shipped": ["docs/tool-verification/README.md (repository root, not shipped)"],
       "limits": "Determining who owns a gate is covered; breaking an authorization the server performs is not. There is no client-side patch that reaches it, and the honest deliverable is the residual: which authority decides, and why the artifact cannot change it."
+    },
+    {
+      "capability": "hardware-watchpoints-ptrace",
+      "group": "native-dynamic",
+      "status": "partial",
+      "route_measured": false,
+      "strength": "unverified",
+      "benchmark_rows": [],
+      "evidence": ["references/hardware-watchpoints.md", "scripts/hw_watch.py"],
+      "evidence_not_shipped": ["docs/tool-verification/EXTENSION-hw-watchpoints.md (repository root, not shipped)"],
+      "limits": "Encoders, refusals and the emitted helper's static aarch64 build are measured on the host; arming a watchpoint on a device, the slot-capacity probe and the control run were never exercised here. The ptrace route leaves TracerPid visible by design -- the ledger in the reference is the contract."
+    },
+    {
+      "capability": "trace-differential-reduction",
+      "group": "native-dynamic",
+      "status": "partial",
+      "route_measured": true,
+      "strength": "observed",
+      "benchmark_rows": [],
+      "evidence": ["references/ete-diff-tracing.md", "scripts/trace_diff.py"],
+      "evidence_not_shipped": ["docs/tool-verification/EXTENSION-ete-diff.md (repository root, not shipped)"],
+      "limits": "The reducer/differ is host-tested on synthetic flattened-dispatcher fixtures in both raw and run_probe-wrapped Stalker grammars. No producer (Stalker pair or cs_etm decode) was ever run through it end to end on a real target."
+    },
+    {
+      "capability": "ete-hardware-tracing",
+      "group": "native-dynamic",
+      "status": "blocked",
+      "route_measured": false,
+      "strength": "unverified",
+      "benchmark_rows": [],
+      "evidence": ["references/ete-diff-tracing.md", "scripts/ete_capture.py"],
+      "evidence_not_shipped": ["docs/tool-verification/EXTENSION-ete-diff.md (repository root, not shipped)"],
+      "limits": "Gates, recipe and capture wrapper are host-measured to the no-device boundary. No coresight capture or decode ever ran here; the reference device's kernel (4.14.186) closes the gate permanently. The --control record is the one-command check that upgrades or refutes the route on a real device."
+    },
+    {
+      "capability": "kernel-instrument-injection",
+      "group": "kernel",
+      "status": "blocked",
+      "route_measured": false,
+      "strength": "unverified",
+      "benchmark_rows": [],
+      "evidence": ["references/kernel-event-injection.md", "scripts/kernel_instrument_scaffold.py"],
+      "evidence_not_shipped": ["docs/tool-verification/EXTENSION-kernel-instrument.md (repository root, not shipped)"],
+      "limits": "Generate/verify and the shared spec-refusal rules are measured on the host. No kernel-side file was ever compiled or loaded; the register-rewrite action is labelled experimental in the template itself. Same gate family as the syscall-mask scaffold: a userspace carrier arms nothing."
+    },
+    {
+      "capability": "spe-brbe-crash-forensics",
+      "group": "native-dynamic",
+      "status": "partial",
+      "route_measured": false,
+      "strength": "unverified",
+      "benchmark_rows": [],
+      "evidence": ["references/hardware-sampling-and-crash.md"],
+      "evidence_not_shipped": ["docs/tool-verification/EXTENSION-sampling-crash.md (repository root, not shipped)"],
+      "limits": "SPE data-flow sampling and BRBE branch records are documented-and-gated: no sample or record was ever captured on any device this repository used. The crash loop's ordering (tombstone -> branch records -> symbolize) is the deliverable."
+    },
+    {
+      "capability": "address-symbolization",
+      "group": "native-static",
+      "status": "ok",
+      "route_measured": true,
+      "strength": "observed",
+      "benchmark_rows": [],
+      "evidence": ["references/hardware-sampling-and-crash.md", "scripts/trace_addr2sym.py"],
+      "evidence_not_shipped": ["docs/tool-verification/EXTENSION-sampling-crash.md (repository root, not shipped)"],
+      "limits": "The zero-dependency ELF64 walker is host-verified against a real cross-compiled aarch64 .so (symbols cross-checked with readelf) and a hand-built minimal ELF. Runtime-address inputs (hits, traces) were exercised on fixtures only, never on a live device trace."
+    },
+    {
+      "capability": "interpreter-trace-devirtualization",
+      "group": "native-dynamic",
+      "status": "partial",
+      "route_measured": true,
+      "strength": "observed",
+      "benchmark_rows": [],
+      "evidence": ["references/ete-diff-tracing.md", "scripts/vm_handler_slice.py"],
+      "evidence_not_shipped": ["docs/tool-verification/EXTENSION-sampling-crash.md (repository root, not shipped)"],
+      "limits": "Dispatcher detection, segment slicing, open-tail handling and the opcode-map trajectory are host-tested on synthetic interpreter traces. Calibration facts (vm_exec shape, opcode table, boxed args, const-materialization dispatch) are read from a public IR virtualizer's source; no hardened binary was ever traced by this repository."
+    },
+    {
+      "capability": "dex-sql-query-layer-dexsql",
+      "group": "dex",
+      "status": "ok",
+      "route_measured": true,
+      "strength": "observed",
+      "benchmark_rows": [],
+      "evidence": [
+        "references/dexsql-sql-query-layer.md",
+        "references/toolchain.md",
+        "scripts/capabilities.py"
+      ],
+      "evidence_not_shipped": [
+        "docs/tool-verification/EXTENSION-dexsql.md (repository root, not shipped)"
+      ],
+      "limits": "Measured on dexsql v0.1.0, Windows amd64 release asset only; no other version or platform was exercised. Class-definition sets were identical to rasc, droidasc and ddc on four archives (1,396 / 647 / 4 / 30,768 classes, zero differences either way), and a string cross-reference query reproduced ASC's hits site for site on one archive. Three boundaries are load-bearing: `decode` emits smali rather than Java, SQL `=` is not `findrefs` (ASC matches a substring, so `LIKE` is the equivalent), and the persistent cache is not a speed switch (under 20% on a 34.8 MB archive, a net loss on a small one). The MCP server was exercised to a tool listing and a resource-model inventory, not end to end from a client."
     }
   ]
 }
